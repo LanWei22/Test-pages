@@ -145,7 +145,7 @@ function logEvent(event, msg)
   lastMouseY = event.type=="mousemove" ? event.clientY : undefined;
   var line = event.type +
     (dupCount > 0 ? '[' + dupCount + ']' : '') +
-    ': target=' + event.target.id + msg; 
+    ': ' + msg; 
   if (dupCount) {
     logElem.lastChild.textContent = line;    
   } else {
@@ -168,7 +168,7 @@ function mouseEventHandler(event)
   var msg = '';
   if (window.PointerEvent && event instanceof PointerEvent) {
     msg += 'pointerType=' + event.pointerType + ', pointerId=' +
-      event.pointerId + ', width=' + round(event.width) + ', height=' + round(event.height) + 
+      event.pointerId +
       ', pressure=' + round(event.pressure) + ', tiltX=' + round(event.tiltX) + ', tiltY=' + round(event.tiltY)
       + ', tangentialPressure=' + round(event.tangentialPressure) + ', twist=' + round(event.twist);
   }
