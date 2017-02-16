@@ -1,0 +1,448 @@
+function $(str) {
+  return document.getElementById(str);
+}
+
+var targetElem = $('touchTarget');
+var logElem = $('log');
+
+function updateHandlers()
+{
+    var setHandlerState = function(events, target, handler, state) {
+        for (var i = 0; i < events.length; i++) {
+            if (state) {
+                target.addEventListener(events[i], handler);
+            }
+            else {
+                target.removeEventListener(events[i], handler);
+            }
+        }
+    }
+
+    setHandlerState(
+        ['mousedown', 'mouseup', 'mouseover', 'mousemove', 'mouseout', 'mouseenter', 'mouseleave',
+        'mousewheel', 'wheel'], 
+        targetElem, mouseEventHandler,
+        $('enableMouseEvents').checked);
+
+    setHandlerState(
+        ['click', 'dblclick', 'auxclick', 'contextmenu'],
+        targetElem, mouseEventHandler,
+        $('enableMouseEvents').checked || $('enablePointerEvents').checked);
+  
+    setHandlerState(
+        ['scroll'],
+        targetElem, logEvent,
+        $('enableScrollEvents').checked);
+
+    // Scroll event doesn't bubble, listen for it directly
+    setHandlerState(
+        ['scroll'],
+        $('scroll'), logEvent,
+        $('enableScrollEvents').checked);
+
+    setHandlerState(
+        ['touchstart', 'touchmove', 'touchend', 'touchcancel'],
+        targetElem, touchEventHandler,
+        $('enableTouchEvents').checked);
+    
+    setHandlerState(
+        ['pointerdown', 'pointermove', 'pointerup', 'pointerover', 'pointerout',
+        'pointerenter', 'pointerleave', 'pointercancel',
+        'gotpointercapture', 'lostpointercapture'],
+        targetElem, mouseEventHandler,
+        $('enablePointerEvents').checked);
+
+    setHandlerState(
+        ['keydown', 'keyup', 'keypress'],
+        targetElem, keyEventHandler,
+        $('enableKeyEvents').checked);
+    setHandlerState(
+        ['focus', 'blur'],
+        targetElem, logEvent,
+        $('enableKeyEvents').checked);
+
+    setHandlerState(
+        ['gesturestart', 'gesturechange', 'gestureend'],
+        targetElem, gestureEventHandler,
+        $('enableGestureEvents').checked);
+
+    setHandlerState(
+        ['dragstart', 'dragenter', 'dragleave', 'drop', 'dragend'],
+        targetElem, mouseEventHandler,
+        $('enableDragEvents').checked);
+
+    setHandlerState(
+        ['touchstart', 'touchmove', 'touchend', 'touchcancel'],
+        $('red'), touchEventHandler,
+        $('redHandlers').checked);
+
+}
+
+var lastEvent;
+var lastMouseX;
+var lastMouseY;
+var dupCount = 0;
+
+// Try to avoid layout thrashing in setting the scroll position
+var scrollLogPending = false;
+function scrollLogToBottom()
+{
+  if (!scrollLogPending) {
+    scrollLogPending = true;
+    requestAnimationFrame(function() {
+      logElem.scrollTop = 1000000;
+      scrollLogPending = false;
+    });
+  }
+}
+
+function log(msg)
+{
+  var line = document.createElement('div');
+  line.appendChild(document.createTextNode(msg));
+  logElem.appendChild(line);
+  scrollLogToBottom();
+}
+
+var lastTime = undefined;
+
+// Round to 2 decimal places
+function round(val)
+{
+    return Math.round(val * 100) / 100;
+}
+
+function logEvent(event, msg)
+{
+  if (!msg)
+    msg = '';
+
+  if (event.shiftKey) msg += ' shift';
+  if (event.altKey) msg += ' alt';
+  if (event.ctrlKey) msg += ' ctrl';
+  if (event.metaKey) msg += ' meta';
+
+  if (lastTime && event.timeStamp) {
+    msg += ' ' + Math.round(event.timeStamp - lastTime) + 'ms';
+  }
+  lastTime = event.timeStamp;
+
+  // prevent too much scrolling - overwrite the last line unless this is a new
+  // event type or not a move event
+  if ($('coalesce').checked && event.type == lastEvent && 
+      (event.type=='mousemove' || event.type=='touchmove' || event.type=='pointermove' || event.type=='scroll')) {
+    dupCount++;
+  } else if(event.type == lastEvent && (event.type=='mousemove' || event.type=='pointermove') &&
+      event.clientX == lastMouseX && event.clientY == lastMouseY) {
+    // This event is probably due only to the scrolling of the log, coalesce it regardless of
+    // the coalescing setting to prevent endless scrolling.
+    dupCount++;
+  } else {
+    dupCount = 0;
+  }
+  lastEvent = event.type;
+  lastMouseX = event.type=="mousemove" ? event.clientX : undefined;
+  lastMouseY = event.type=="mousemove" ? event.clientY : undefined;
+  var line = event.type +
+    (dupCount > 0 ? '[' + dupCount + ']' : '') +
+    ': target=' + event.target.id + msg; 
+  if (dupCount) {
+    logElem.lastChild.textContent = line;    
+  } else {
+    log(line);
+  }
+}
+
+function callPreventDefault(event)
+{
+  var evtName = event.type;
+  if (evtName.indexOf("MS") == 0)
+      evtName = evtName.substr(2).toLowerCase();
+  var pdConfig = $('pd-' + evtName);
+  if (pdConfig && pdConfig.checked)
+      event.preventDefault();
+}
+
+function mouseEventHandler(event)
+{
+  var msg = '';
+  if (window.PointerEvent && event instanceof PointerEvent) {
+    msg += 'pointerType=' + event.pointerType + ', pointerId=' +
+      event.pointerId + ', width=' + round(event.width) + ', height=' + round(event.height) + 
+      ', pressure=' + round(event.pressure) + ', tiltX=' + round(event.tiltX) + ', tiltY=' + round(event.tiltY)
+      + ', tangentialPressure=' + round(event.tangentialPressure) + ', twist=' + round(event.twist);
+  }
+ 
+  logEvent(event, msg);
+
+  callPreventDefault(event);
+
+  if (event.type=='pointerdown' && $('pointercapture').checked) {
+    event.target.setPointerCapture(event.pointerId);
+  }	
+}
+
+function keyEventHandler(event)
+{
+  var msg = '';
+  if ('charCode' in event)
+    msg += ' charCode=' + event.charCode;
+  if ('keyCode' in event)
+    msg += ' keyCode=' + event.keyCode;
+  if ('key' in event)
+    msg += ' key=' + event.key;
+  if ('code' in event)
+    msg += ' code=' + event.code;
+  if ('location' in event) {
+    if (event.location == KeyboardEvent.DOM_KEY_LOCATION_LEFT)
+        msg += ' LOCATION_LEFT';
+    else if (event.location == KeyboardEvent.DOM_KEY_LOCATION_NUMPAD)
+        msg += ' LOCATION_NUMPAD';
+    else if (event.location == KeyboardEvent.DOM_KEY_LOCATION_RIGHT)
+        msg += ' LOCATION_RIGHT';
+  }
+  if (event.repeat)
+    msg += ' repeat';
+  if (event.isComposing)
+    msg += ' isComposing';
+  
+  logEvent(event, msg);
+}
+
+// True if a gesture is occuring that should cause clicks to be swallowed
+var gestureActive = false;
+
+// The position a touch was last started
+var lastTouchStartPosition;
+
+// Distance which a touch needs to move to be considered a drag
+var DRAG_DISTANCE=3;
+
+var touchMap = {};
+var nextId = 1;
+
+function getProp(touch, propName)
+{
+  if (propName in touch)
+    return touch[propName];
+  var prefixedName = 'webkit' + propName.substr(0,1).toUpperCase() + propName.substr(1);
+  if (prefixedName in touch)
+    return touch[prefixedName];
+  return undefined;
+}
+
+function makeTouchList(touches, verbose)
+{
+  var touchStr = '';
+  for(var i = 0; i < touches.length; i++) {
+    var tgt = '';
+    if (i > 0)
+      touchStr += ' ';
+
+    if (verbose)
+      tgt = '-' + touches[i].target.id;
+      
+    var id = touches[i].identifier;
+    if (id >= 100) {
+      if (!(id in touchMap)) {
+        touchMap[id] = nextId;
+        nextId++;
+      }
+      id = '#' + touchMap[id];
+    }
+
+    if (!verbose || $('simple').checked) {
+      touchStr += id + tgt;
+    } else {
+      touchStr += id + tgt + '(c=' + round(touches[i].clientX) + ',' + round(touches[i].clientY) +
+        ' s=' + round(touches[i].screenX) + ',' + round(touches[i].screenY);
+      var force = getProp(touches[i], 'force');
+      if (force !== undefined) {
+        touchStr += ' f' + round(force);
+      }
+
+      var radiusX = getProp(touches[i], 'radiusX');
+      var radiusY = getProp(touches[i], 'radiusY');
+      if (radiusX !== undefined || radiusY !== undefined) {
+        touchStr += ' ' + round(radiusX) + 'x' + round(radiusY);
+      }
+      var rot = getProp(touches[i], 'rotationAngle');
+      if (rot !== undefined) {
+        touchStr += ' ' + round(rot) + '&deg;'
+      }
+      touchStr += ')';
+    }
+  }
+  return touchStr;
+}
+
+var activeTouchData = {};
+
+function touchEventHandler(event)
+{
+    var touchStr =
+      ' touches=' + makeTouchList(event.touches, true) +
+      ' changed=' + makeTouchList(event.changedTouches) +
+      ' target=' + makeTouchList(event.targetTouches)
+
+    if (!$('simple').checked) {
+      touchStr += ' cancelable=' + event.cancelable;
+    }
+
+    logEvent(event, touchStr);
+
+    if ($('touchSummary').checked) {
+      for (var i = 0; i < event.changedTouches.length; i++) {
+        var touch = event.changedTouches[i];
+
+        if (event.type == 'touchstart') {	
+          var touchData = {
+            startTime: event.timeStamp,
+            startX: touch.screenX,
+            startY: touch.screenY,
+            maxDist: 0,
+            maxMDist: 0
+          };
+          activeTouchData[touch.identifier] = touchData;
+        } else {
+          var touchData = activeTouchData[touch.identifier];
+          var distX = Math.abs(touch.screenX - touchData.startX);
+          var distY = Math.abs(touch.screenY - touchData.startY);
+          touchData.maxDist = Math.max(touchData.maxDist,
+            Math.sqrt(distX*distX + distY*distY));
+          touchData.maxMDist = Math.max(touchData.maxMDist, distX + distY);
+          if (event.type == 'touchend') {
+            log('touch ' + touch.identifier + ' summary:' +
+              ' dist=(' + distX + ',' + distY + ')' +
+              ' max-dist=' + Math.round(touchData.maxDist) +
+              ' max-manhattan-dist=' + touchData.maxMDist + 
+              ' dur=' + (Math.round(event.timeStamp - touchData.startTime))/1000);
+            delete activeTouchData[touch.identifier];
+          }
+        }
+      }
+    }
+    callPreventDefault(event);
+}
+
+function gestureEventHandler(event)
+{
+    logEvent(event, 'scale=' + event.scale + ', rotation=' + event.rotation);
+}
+
+function updateConfigSummary() {
+  var checkboxes = document.querySelectorAll('#config input[type=checkbox]');
+  var summary = '';
+  for(var i = 0; i < checkboxes.length; i++)
+  {
+    if (checkboxes[i].checked)
+      summary += checkboxes[i].id + ' ';
+  }
+  $('config-summary').textContent = summary;
+}
+
+function writeConfigState() {
+  var eventConfig = {};
+  var checkboxes = document.querySelectorAll('#config input[type=checkbox]');
+  for(var i = 0; i < checkboxes.length; i++)
+    eventConfig[checkboxes[i].id] = checkboxes[i].checked;
+  localStorage.eventConfig2 = JSON.stringify(eventConfig);
+}
+
+function readConfigState() {
+  if (localStorage.eventConfig2) {
+    var eventConfig = JSON.parse(localStorage.eventConfig2);
+    var checkboxes = document.querySelectorAll('#config input[type=checkbox]');
+    for(var i = 0; i < checkboxes.length; i++)
+      if (checkboxes[i].id in eventConfig)
+        checkboxes[i].checked = eventConfig[checkboxes[i].id];    
+  }
+}
+
+$('btnConfig').addEventListener('click', function() {
+  $('overlay').className = '';
+});
+
+$('btnOk').addEventListener('click', function() {
+  $('overlay').className = 'hide';
+  updateConfigSummary();
+  writeConfigState();
+});
+
+// Disable drag and drop on the document so it doesn't interfere with events
+document.addEventListener('dragstart', function(e) {
+  e.preventDefault();
+}, true);
+
+$('enableMouseEvents').addEventListener('click', updateHandlers, false);
+$('enableScrollEvents').addEventListener('click', updateHandlers, false);
+$('enableTouchEvents').addEventListener('click', updateHandlers, false);
+$('enableKeyEvents').addEventListener('click', updateHandlers, false);
+$('enableGestureEvents').addEventListener('click', updateHandlers, false);
+$('enablePointerEvents').addEventListener('click', updateHandlers, false);
+$('enableDragEvents').addEventListener('click', updateHandlers, false);
+$('redHandlers').addEventListener('click', updateHandlers, false);
+
+var alternateTimer;
+function setAlternateTimer() {
+  if ($('alternatePDTouchMove').checked) {
+    alternateTimer = window.setInterval(function() {
+      $('pd-touchmove').click();
+      updateConfigSummary();
+    }, 3000);
+  } else {
+    window.clearInterval(alternateTimer);
+    alternateTimer = undefined;
+  }
+}
+$('alternatePDTouchMove').addEventListener('click', setAlternateTimer);
+
+function setTouchAction() {
+   $('touchTarget').className = $('touchActionNone').checked ? 'touchActionNone' : '';
+}
+
+$('touchActionNone').addEventListener('click', setTouchAction);
+
+function setOverflowScrollTouch() {
+  $('scroll').className = $('overflowScrollTouch').checked ? 'box overflowScrollTouch' : 'box';
+  $('log').className = $('overflowScrollTouch').checked ? 'overflowScrollTouch' : '';
+}
+
+$('overflowScrollTouch').addEventListener('click', setOverflowScrollTouch);
+
+function deleteRed(e) {
+  var n = $('red');
+  log ('red: saw ' + e.type);
+  if (n) {
+    n.parentNode.removeChild(n);
+    log ('red: removed node from dom');
+  }
+}
+//$('red').addEventListener('touchmove', deleteRed);
+//$('red').addEventListener('mousemove', deleteRed);
+document.addEventListener('keyup', function(e) {
+  switch(e.which) {
+    // ESC
+    case 27:
+    deleteRed(e);
+  }
+});
+
+readConfigState();
+updateConfigSummary();
+updateHandlers();
+setAlternateTimer();
+setTouchAction();
+setOverflowScrollTouch();
+
+targetElem.focus();
+
+
+// Google analytics
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-69196529-2', 'auto');
+ga('send', 'pageview');
